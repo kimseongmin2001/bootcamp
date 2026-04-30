@@ -1,0 +1,4 @@
+mjpeg_node:
+  ros__parameters:
+    front_url:  "http://192.168.0.13:8083"
+    bottom_url: "http://192.168.0.13:8084"

@@ -1,0 +1,7 @@
+vlm_node:
+  ros__parameters:
+    qwen_server_url: "http://localhost:8002"
+    inference_interval_sec: 2.0
+    max_new_tokens: 128
+    jpeg_quality: 85
+    request_timeout_sec: 20.0

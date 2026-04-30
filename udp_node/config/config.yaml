@@ -1,0 +1,4 @@
+udp_node:
+  ros__parameters:
+    listen_port: 50002
+    publish_rate_hz: 50.0
