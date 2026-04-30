@@ -4,7 +4,11 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
-#include <cv_bridge/cv_bridge.h>
+#if __has_include(<cv_bridge/cv_bridge.hpp>)
+  #include <cv_bridge/cv_bridge.hpp>
+#else
+  #include <cv_bridge/cv_bridge.h>
+#endif
 #include <opencv2/opencv.hpp>
 
 #include <atomic>
@@ -69,7 +73,8 @@ private:
     std::deque<geometry_msgs::msg::Point> trajectory_;
     static constexpr std::size_t TRAJ_MAX = 300;
 
-    int  zoom_, grid_;
+    int   zoom_, grid_;
+    float pt_spacing_ = 2.0f;   // PointCloud2 포인트 크기 (m), 동적 계산
 
     std::atomic<bool> prefetch_running_{true};
     std::thread       prefetch_thread_;

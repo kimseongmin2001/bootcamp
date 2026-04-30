@@ -1,7 +1,7 @@
 satellite_node:
   ros__parameters:
-    tile_zoom: 18          # 400m 고도 등가 (1px ≈ 0.5m)
-    grid_tiles: 7          # 7×7 타일 → 약 900m × 900m 커버리지
-    publish_rate_hz: 1.0
-    output_size: 1280
-    tile_cache_dir: "/home/kimseongmin/.cache/bootcamp_tiles"
+    tile_zoom:        18          # zoom 18 ≈ 0.6 m/px (400 m 고도 기준)
+    grid_tiles:        7          # 7×7 타일 → 약 1 km × 1 km 커버리지
+    publish_rate_hz:   1.0
+    tile_cache_dir:   "/home/kimseongmin/.cache/bootcamp_tiles"
+    mesh_path:        ""          # 비워두면 패키지 내 meshes/joby_s4.stl 자동 사용

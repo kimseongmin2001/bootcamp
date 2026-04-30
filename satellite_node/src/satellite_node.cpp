@@ -62,10 +62,11 @@ SatelliteNode::SatelliteNode() : Node("satellite_node")
         [this](std_msgs::msg::Float64MultiArray::ConstSharedPtr msg) {
             state_cb(msg); });
 
+    auto reliable_qos = rclcpp::QoS(10).reliable().transient_local();
     markers_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
-        "/bootcamp/markers", rclcpp::QoS(10));
+        "/bootcamp/markers", reliable_qos);
     cloud_pub_   = create_publisher<sensor_msgs::msg::PointCloud2>(
-        "/bootcamp/ground_map", rclcpp::SensorDataQoS());
+        "/bootcamp/ground_map", reliable_qos);
     image_pub_   = create_publisher<sensor_msgs::msg::Image>(
         "/bootcamp/satellite_map", rclcpp::SensorDataQoS());
 
@@ -131,6 +132,10 @@ void SatelliteNode::publish_markers(const FlightState& f,
     auto now_stamp = now();
     const std::string frame = "map";
 
+    // 표시 고도 고정: 실제 고도와 무관하게 항상 150m 위에 표시
+    // 실제 고도는 텍스트로만 표기 → 카메라 줌/각도 변경 없이 한눈에 보임
+    constexpr double DISPLAY_ALT = 150.0;
+
     auto base_marker = [&](int id, int type) {
         visualization_msgs::msg::Marker m;
         m.header.frame_id = frame;
@@ -143,37 +148,30 @@ void SatelliteNode::publish_markers(const FlightState& f,
         return m;
     };
 
-    // ── 0: Joby S4 메시 ───────────────────────────────────────────────────
+    // ── 0: Joby S4 메시 (고도 고정 표시) ─────────────────────────────────
     {
         auto m = base_marker(0, visualization_msgs::msg::Marker::MESH_RESOURCE);
         m.mesh_resource = mesh_uri_;
         m.mesh_use_embedded_materials = false;
 
-        // 위치: ENU (east, north, altitude)
-        m.pose.position = make_pt(east, north, f.alt);
+        m.pose.position = make_pt(east, north, DISPLAY_ALT);
 
-        // 방향: heading (yaw around Z in ENU)
-        // ENU에서 +X = East, +Y = North, +Z = Up
-        // 기체 +X = nose → ENU yaw: 0° = East, 90° = North
-        // MSFS heading: 0° = North, 90° = East → yaw = 90° - hdg
+        // heading: MSFS 0°=North, 90°=East → ENU yaw = 90° - hdg
         double yaw = (90.0 - f.hdg) * DEG2RAD;
         m.pose.orientation.z = std::sin(yaw / 2.0);
         m.pose.orientation.w = std::cos(yaw / 2.0);
 
-        // pitch / roll 적용
-        // 간단히 yaw만 적용 (pitch/roll은 선택)
-
         m.scale.x = m.scale.y = m.scale.z = 1.0;
-        m.color = make_color(0.85f, 0.90f, 0.95f, 1.0f);   // 밝은 회백색
+        m.color = make_color(0.85f, 0.90f, 0.95f, 1.0f);
         ma.markers.push_back(m);
     }
 
-    // ── 1: 수직 하강선 (기체 → 지면) ────────────────────────────────────
+    // ── 1: 수직 하강선 (고정 표시 고도 → 지면) ───────────────────────────
     {
         auto m = base_marker(1, visualization_msgs::msg::Marker::LINE_STRIP);
         m.scale.x = 1.5;
-        m.color   = make_color(0.0f, 0.85f, 1.0f, 0.8f);   // 시안
-        m.points.push_back(make_pt(east, north, f.alt));
+        m.color   = make_color(0.0f, 0.85f, 1.0f, 0.8f);
+        m.points.push_back(make_pt(east, north, DISPLAY_ALT));
         m.points.push_back(make_pt(east, north, 0.0));
         ma.markers.push_back(m);
     }
@@ -199,47 +197,46 @@ void SatelliteNode::publish_markers(const FlightState& f,
         ma.markers.push_back(m);
     }
 
-    // ── 4: 비행 궤적 ──────────────────────────────────────────────────────
+    // ── 4: 비행 궤적 (고정 고도 평면에 표시) ─────────────────────────────
     {
         std::lock_guard<std::mutex> lk(traj_mutex_);
-        // 현재 위치 추가
-        trajectory_.push_back(make_pt(east, north, f.alt));
+        trajectory_.push_back(make_pt(east, north, DISPLAY_ALT));
         if (trajectory_.size() > TRAJ_MAX) trajectory_.pop_front();
 
         if (trajectory_.size() > 1) {
             auto m = base_marker(4, visualization_msgs::msg::Marker::LINE_STRIP);
-            m.scale.x = 2.0;
-            m.color   = make_color(1.0f, 0.55f, 0.0f, 0.9f);   // 주황
+            m.scale.x = 2.5;
+            m.color   = make_color(1.0f, 0.55f, 0.0f, 0.9f);
             m.points.assign(trajectory_.begin(), trajectory_.end());
             ma.markers.push_back(m);
         }
     }
 
-    // ── 5: 속도 벡터 화살표 ──────────────────────────────────────────────
+    // ── 5: 속도 벡터 화살표 (고정 고도) ─────────────────────────────────
     if (f.spd > 0.5) {
         auto m = base_marker(5, visualization_msgs::msg::Marker::ARROW);
-        double yaw  = (90.0 - f.hdg) * DEG2RAD;
-        double vx = f.spd * std::cos(yaw);
-        double vy = f.spd * std::sin(yaw);
-        m.points.push_back(make_pt(east, north, f.alt));
-        m.points.push_back(make_pt(east + vx*3, north + vy*3, f.alt));
-        m.scale.x = 2.5; m.scale.y = 5.0; m.scale.z = 5.0;
-        m.color   = make_color(1.0f, 1.0f, 0.0f, 0.9f);        // 노랑
+        double yaw = (90.0 - f.hdg) * DEG2RAD;
+        double vx  = f.spd * std::cos(yaw);
+        double vy  = f.spd * std::sin(yaw);
+        m.points.push_back(make_pt(east,        north,        DISPLAY_ALT));
+        m.points.push_back(make_pt(east + vx*4, north + vy*4, DISPLAY_ALT));
+        m.scale.x = 3.0; m.scale.y = 6.0; m.scale.z = 6.0;
+        m.color   = make_color(1.0f, 1.0f, 0.0f, 0.9f);
         ma.markers.push_back(m);
     }
 
-    // ── 6: HUD 텍스트 패널 ────────────────────────────────────────────────
+    // ── 6: HUD 텍스트 (실제 고도 표시) ──────────────────────────────────
     {
         auto m = base_marker(6, visualization_msgs::msg::Marker::TEXT_VIEW_FACING);
         char buf[256];
         std::snprintf(buf, sizeof(buf),
-            "LAT  %.5f\nLON  %.5f\nALT  %.1f m\nSPD  %.1f m/s\nHDG  %.1f deg",
+            "LAT  %.5f\nLON  %.5f\nALT  %.0f m\nSPD  %.1f m/s\nHDG  %.0f deg",
             f.valid ? f.lat : DEFAULT_LAT,
             f.valid ? f.lon : DEFAULT_LON,
             f.alt, f.spd, f.hdg);
         m.text = buf;
-        m.pose.position = make_pt(east + 50, north, f.alt + 20);
-        m.scale.z = 6.0;
+        m.pose.position = make_pt(east + 60, north + 60, DISPLAY_ALT + 30);
+        m.scale.z = 8.0;
         m.color = f.valid ? make_color(0.6f, 1.0f, 0.6f)
                           : make_color(1.0f, 0.8f, 0.2f);
         ma.markers.push_back(m);
@@ -252,12 +249,19 @@ void SatelliteNode::publish_markers(const FlightState& f,
 void SatelliteNode::publish_ground_cloud(const TileCanvas& tc,
                                           double ref_lat, double ref_lon)
 {
-    // 다운샘플: 256×256 으로 축소
-    cv::Mat small;
-    cv::resize(tc.image, small, {256, 256}, 0, 0, cv::INTER_AREA);
+    // 해상도: 실제 커버리지(m) / 목표 포인트 간격(m)
+    // zoom=18, 7×7 타일 → 약 1075m 커버, 포인트 간격 1.5m 목표
+    double coverage_m = tc.image.cols * tc.mpp;   // 전체 커버리지(m)
+    float  pt_spacing = 1.5f;                      // 포인트 간격 목표(m)
+    int    res = std::min(1024,
+                    std::max(256, (int)(coverage_m / pt_spacing)));
+    // 포인트 크기 = 간격보다 5% 크게 → 틈 없이 이어짐
+    pt_spacing_ = coverage_m / res * 1.05f;
 
-    const int rows = small.rows, cols = small.cols;
-    const int N = rows * cols;
+    cv::Mat small;
+    cv::resize(tc.image, small, {res, res}, 0, 0, cv::INTER_AREA);
+
+    const int rows = small.rows, cols = small.cols, N = rows * cols;
 
     sensor_msgs::msg::PointCloud2 cloud;
     cloud.header.stamp    = now();
@@ -280,7 +284,7 @@ void SatelliteNode::publish_ground_cloud(const TileCanvas& tc,
     // 캔버스 네 모서리의 GPS 좌표를 ENU로 변환하여 스케일 계산
     // top-left GPS: (tc.top_lat, tc.left_lon)
     // 픽셀 당 미터
-    double mpp = tc.meters_per_pixel;
+    double mpp = tc.mpp;
 
     sensor_msgs::PointCloud2Iterator<float> it_x(cloud, "x");
     sensor_msgs::PointCloud2Iterator<float> it_y(cloud, "y");
@@ -355,9 +359,10 @@ void SatelliteNode::publish_image(const TileCanvas& tc,
 
     cv::Mat out;
     cv::resize(canvas, out, {IMG_W, IMG_H});
-    auto msg = cv_bridge::CvImage({}, "bgr8", out).toImageMsg();
-    msg->header.stamp    = now();
-    msg->header.frame_id = "map";
+    std_msgs::msg::Header hdr;
+    hdr.stamp    = now();
+    hdr.frame_id = "map";
+    auto msg = cv_bridge::CvImage(hdr, "bgr8", out).toImageMsg();
     image_pub_->publish(*msg);
 }
 
@@ -381,23 +386,21 @@ void SatelliteNode::render_cb()
     double lat = f.valid ? f.lat : DEFAULT_LAT;
     double lon = f.valid ? f.lon : DEFAULT_LON;
 
-    // GPS 기준점 (처음 한 번만 설정)
-    if (!ref_set_) {
-        ref_lat_ = lat; ref_lon_ = lon;
-        ref_set_ = true;
-        RCLCPP_INFO(get_logger(),
-            "ENU 기준점 설정: lat=%.5f lon=%.5f", ref_lat_, ref_lon_);
-    }
+    // ENU 기준점 = 타일 캔버스 중심 (드론 현재 위치)
+    // 매 프레임 갱신 → 비행기가 항상 화면 중앙에 위치
+    ref_lat_ = lat;
+    ref_lon_ = lon;
 
-    double east, north;
-    gps_to_enu(lat, lon, east, north);
+    double east  = 0.0;   // 드론은 항상 ENU 원점 (0, 0)
+    double north = 0.0;
 
     // RViz 마커 발행
     publish_markers(f, east, north);
 
-    // 위성 지도 PointCloud2 (1Hz마다 갱신하면 너무 무거우므로 5초마다)
+    // 위성 지도 PointCloud2: 타일 캔버스 중심 = 드론 위치 = ENU 기준점
+    // 매번 갱신 (드론이 움직이면 지도도 같이 이동)
     static int cloud_skip = 0;
-    if (cloud_skip++ % 5 == 0)
+    if (cloud_skip++ % 3 == 0)
         publish_ground_cloud(tc, ref_lat_, ref_lon_);
 
     // rqt / vlm_node용 이미지
