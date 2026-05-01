@@ -14,10 +14,12 @@ double                   meters_per_pixel(double lat, int zoom);
 
 class TileFetcher {
 public:
-    explicit TileFetcher(std::string cache_dir, double timeout_sec = 5.0);
+    explicit TileFetcher(std::string cache_dir, double timeout_sec = 5.0,
+                         std::string local_tiles_dir = "");
     TileCanvas build_canvas(double lat, double lon, int zoom, int grid);
 private:
     cv::Mat fetch_tile(int x, int y, int zoom);
     std::string cache_dir_;
+    std::string local_tiles_dir_;   // bing_{z}_{x}_{y}.jpg 형식 디렉토리
     double      timeout_sec_;
 };

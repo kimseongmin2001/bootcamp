@@ -4,6 +4,7 @@
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
+#include <opencv2/freetype.hpp>
 
 #include <atomic>
 #include <mutex>
@@ -40,6 +41,8 @@ private:
     std::string       qwen_url_;
     int               max_tokens_, jpeg_quality_;
     double            timeout_sec_;
+
+    cv::Ptr<cv::freetype::FreeType2> ft2_;
 
     std::mutex        mutex_;
     cv::Mat           img_front_, img_bottom_;

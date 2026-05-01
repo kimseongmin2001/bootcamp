@@ -4,4 +4,5 @@ satellite_node:
     grid_tiles:        7          # 7×7 타일 → 약 1 km × 1 km 커버리지
     publish_rate_hz:   1.0
     tile_cache_dir:   "/home/kimseongmin/.cache/bootcamp_tiles"
+    local_tiles_dir:  "/home/kimseongmin/irdl_ws/data/sat_tiles"
     mesh_path:        ""          # 비워두면 패키지 내 meshes/joby_s4.stl 자동 사용

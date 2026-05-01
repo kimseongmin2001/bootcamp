@@ -39,24 +39,39 @@ static size_t write_cb(void* ptr, size_t size, size_t nmemb, std::string* buf)
     return size * nmemb;
 }
 
-TileFetcher::TileFetcher(std::string cache_dir, double timeout_sec)
-    : cache_dir_(std::move(cache_dir)), timeout_sec_(timeout_sec)
+TileFetcher::TileFetcher(std::string cache_dir, double timeout_sec,
+                         std::string local_tiles_dir)
+    : cache_dir_(std::move(cache_dir)),
+      local_tiles_dir_(std::move(local_tiles_dir)),
+      timeout_sec_(timeout_sec)
 {
     fs::create_directories(cache_dir_);
 }
 
 cv::Mat TileFetcher::fetch_tile(int x, int y, int zoom)
 {
+    // 1순위: 로컬 타일 디렉토리 (bing_{zoom}_{x}_{y}.jpg)
+    if (!local_tiles_dir_.empty()) {
+        std::string fname = "bing_" + std::to_string(zoom) + "_"
+                          + std::to_string(x) + "_"
+                          + std::to_string(y) + ".jpg";
+        fs::path local_path = fs::path(local_tiles_dir_) / fname;
+        if (fs::exists(local_path)) {
+            cv::Mat img = cv::imread(local_path.string());
+            if (!img.empty()) return img;
+        }
+    }
+
+    // 2순위: 다운로드 캐시
     fs::path path = fs::path(cache_dir_)
         / std::to_string(zoom) / std::to_string(x)
         / (std::to_string(y) + ".jpg");
     fs::create_directories(path.parent_path());
 
-    // 캐시 히트
     if (fs::exists(path)) {
         cv::Mat img = cv::imread(path.string());
         if (!img.empty()) return img;
-        fs::remove(path);   // 손상된 캐시 파일 삭제 후 재다운로드
+        fs::remove(path);
     }
 
     // Esri World Imagery  {z}/{y}/{x}

@@ -38,11 +38,13 @@ SatelliteNode::SatelliteNode() : Node("satellite_node")
     declare_parameter("tile_cache_dir",
         std::string("/home/kimseongmin/.cache/bootcamp_tiles"));
     declare_parameter("mesh_path", std::string(""));  // joby_s4.stl 절대경로
+    declare_parameter("local_tiles_dir", std::string(""));
 
     zoom_  = get_parameter("tile_zoom").as_int();
     grid_  = get_parameter("grid_tiles").as_int();
     double rate  = get_parameter("publish_rate_hz").as_double();
     std::string cache = get_parameter("tile_cache_dir").as_string();
+    std::string local_tiles = get_parameter("local_tiles_dir").as_string();
 
     // mesh URI (RViz MESH_RESOURCE에 필요)
     std::string mesh_path = get_parameter("mesh_path").as_string();
@@ -55,7 +57,10 @@ SatelliteNode::SatelliteNode() : Node("satellite_node")
     mesh_uri_ = "file://" + mesh_path;
     RCLCPP_INFO(get_logger(), "Joby mesh: %s", mesh_uri_.c_str());
 
-    fetcher_ = std::make_unique<TileFetcher>(cache, 8.0);
+    if (!local_tiles.empty())
+        RCLCPP_INFO(get_logger(), "Local tiles dir: %s", local_tiles.c_str());
+
+    fetcher_ = std::make_unique<TileFetcher>(cache, 8.0, local_tiles);
 
     sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
         "/bootcamp/flight_state", rclcpp::QoS(10),
@@ -161,7 +166,7 @@ void SatelliteNode::publish_markers(const FlightState& f,
         m.pose.orientation.z = std::sin(yaw / 2.0);
         m.pose.orientation.w = std::cos(yaw / 2.0);
 
-        m.scale.x = m.scale.y = m.scale.z = 1.0;
+        m.scale.x = m.scale.y = m.scale.z = 10.0;
         m.color = make_color(0.85f, 0.90f, 0.95f, 1.0f);
         ma.markers.push_back(m);
     }
